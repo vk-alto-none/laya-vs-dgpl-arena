@@ -80,7 +80,7 @@
 <body>
 <div id="app">
   <header>
-    <div class="brand">Typed decision lab / kombat<b><span id="n1">LAYA</span> × <span id="n2">JEV</span></b></div>
+    <div class="brand">Typed decision lab / kombat<b><span id="n1">LAYA</span> × <span id="n2">DGPL S1</span></b></div>
     <button class="primary" id="run">Fight</button>
     <button id="stopBtn" disabled>Stop</button>
     <button id="exportBtn">Export JSON</button>
@@ -98,7 +98,7 @@
     </div>
     <div class="vs">VS</div>
     <div class="hp r" id="hp2">
-      <div class="row"><div class="nm" style="color:var(--p2)" id="w2">JEV</div><div class="pct" id="h2">100%</div></div>
+      <div class="row"><div class="nm" style="color:var(--p2)" id="w2">DGPL S1</div><div class="pct" id="h2">100%</div></div>
       <div class="track"><div class="fillbar" id="f2" style="background:linear-gradient(270deg,#2f6f9f,#5ec8f2)"></div></div>
     </div>
   </div>
@@ -113,11 +113,11 @@
       <div class="phead">
         <div class="who" style="color:var(--p1)">LAYA</div>
         <select id="agent1">
-          <option value="laya" selected>Laya · local, in-process</option>
+          <option value="laya" selected>Laya · ModernBERT 421M (local)</option>
+          <option value="dgpl">DGPL System-1 v2.0 · 48.8M (local 13µs)</option>
           <option value="jev-latest">TypeSafe · jev-latest</option>
-          <option value="jev-1.13.0">TypeSafe · jev-1.13.0</option>
         </select>
-        <div class="tag" id="tag1">LOCAL</div>
+        <div class="tag" id="tag1">LOCAL · LAYA</div>
       </div>
       <div class="stats">
         <div class="stat"><i>Decisions</i><b id="dc1">0</b></div>
@@ -130,13 +130,13 @@
     </div>
     <div class="panel" data-side="2">
       <div class="phead">
-        <div class="who" style="color:var(--p2)">JEV</div>
+        <div class="who" style="color:var(--p2)">DGPL S1</div>
         <select id="agent2">
-          <option value="jev-latest" selected>TypeSafe · jev-latest</option>
-          <option value="jev-1.13.0">TypeSafe · jev-1.13.0</option>
-          <option value="laya">Laya · local, in-process</option>
+          <option value="dgpl" selected>DGPL System-1 v2.0 · 48.8M (local 13µs)</option>
+          <option value="laya">Laya · ModernBERT 421M (local)</option>
+          <option value="jev-latest">TypeSafe · jev-latest</option>
         </select>
-        <div class="tag" id="tag2">REMOTE / API</div>
+        <div class="tag" id="tag2">LOCAL · 13µs</div>
       </div>
       <div class="stats">
         <div class="stat"><i>Decisions</i><b id="dc2">0</b></div>
@@ -182,18 +182,22 @@ const QUESTIONS = {
   },
   commit: {
     type: 'noul',
-    instructions: 'Committing means choosing the heavy, slow attack over the safe, fast one. Is this the moment to commit?',
+    instructions: 'A kick deals heavy damage if it connects, but if blocked or missed it leaves you helpless. Commit to a kick here?',
     criteria: {
-      true: 'The opponent is recovering, cornered, or otherwise cannot punish a slow attack, and they are in range.',
-      false: 'The opponent is winding up, blocking, out of range, or free to move — a slow attack would be punished.'
+      true: 'The opponent is within kick reach and is either recovering from an attack or clearly vulnerable, so the kick will connect.',
+      false: 'The opponent is guarding, ready to counter, out of range, or winding up their own attack.'
     }
   }
 };
 
-/** a fight agent: same plumbing, different questions and a different readout */
 class FightAgent extends ModelAgent {
-  constructor(ring, who, opts = {}){
-    super(ring, {...opts, questions: QUESTIONS});
+  constructor(ring, who, opts){
+    super(null, {
+      ...opts,
+      questions: QUESTIONS,
+      turnBudget: 0,
+      workers: opts.workers || 3
+    });
     this.ring = ring;
     this.who = who;
     this.action = 'ADVANCE';
@@ -222,9 +226,9 @@ const agents = [null, null];
 
 function specFor(side){
   const sel = $('agent'+side).value;
-  return sel === 'laya'
-    ? {model: 'laya', endpoint: '/api/laya', workers: 2, tag: 'LOCAL'}
-    : {model: sel, endpoint: '/api/jev', workers: 3, tag: 'REMOTE / API'};
+  if (sel === 'laya') return {model: 'laya', endpoint: '/api/laya', workers: 2, tag: 'LOCAL · LAYA'};
+  if (sel === 'dgpl') return {model: 'dgpl-s1', endpoint: '/api/dgpl', workers: 4, tag: 'LOCAL · 13µs'};
+  return {model: sel, endpoint: '/api/jev', workers: 3, tag: 'REMOTE / API'};
 }
 
 function buildAgents(){

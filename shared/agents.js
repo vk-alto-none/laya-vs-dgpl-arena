@@ -87,7 +87,7 @@ export class ModelAgent {
     this.inputTokens = 0; this.outputTokens = 0;
     this.lastChoice = '—'; this.lastProbs = null; this.error = null;
     this.steer = 0; this.sprint = false; this.startedAt = performance.now();
-    this.angAtDecision = this.arena.snake ? this.arena.snake.ang : 0;
+    this.angAtDecision = (this.arena && this.arena.snake) ? this.arena.snake.ang : 0;
     this.onReset();
   }
 
@@ -111,7 +111,7 @@ export class ModelAgent {
   }
 
   /** the state sent with every request; a game with a different world overrides it */
-  senseState(){ return this.arena.sense(); }
+  senseState(){ return this.arena ? this.arena.sense() : {}; }
 
   /** one blocking decision before the round starts, so nobody acts blind */
   async prime(){
@@ -151,6 +151,7 @@ export class ModelAgent {
       budget: once that much heading change has been spent, the snake runs straight
       until Jev speaks again. */
   control(){
+    if (!this.arena || !this.arena.snake) return {steer: 0, sprint: false};
     let steer = this.steer, sprint = this.sprint;
     const spent = Math.abs(this.arena.snake.ang - this.angAtDecision);
     // A sharp answer buys a bigger heading change than an easing one. The cap is
@@ -175,7 +176,7 @@ export class ModelAgent {
 
   async pump(){
     while (!this.stopped){
-      if (!this.arena.running){ await sleep(120); continue; }
+      if (this.arena && !this.arena.running){ await sleep(120); continue; }
       const t = performance.now();
       try {
         const res = await fetch(this.endpoint, {
@@ -213,21 +214,14 @@ export class ModelAgent {
     this.onAnswers(a);
     if (a.steer){
       const probs = a.steer.probabilities || {};
-      // Act on the decision, not on the average of the options. Blending the whole
-      // distribution sounds principled but soft, near-uniform answers cancel out into
-      // almost no steering, and the snake drifts past every apple. The distribution is
-      // still surfaced on the HUD and exported.
       const want = STEER_VALUES[a.steer.choice] ?? 0;
-      // answers arrive ~1s stale, so two in-flight decisions can disagree and set up an
-      // oscillation; ease toward the new value instead of snapping to it
       this.steer = this.steer*0.35 + want*0.65;
-      this.angAtDecision = this.arena.snake ? this.arena.snake.ang : 0;
+      this.angAtDecision = (this.arena && this.arena.snake) ? this.arena.snake.ang : 0;
       this.lastChoice = a.steer.choice;
       this.lastProbs = probs;
       this.confidence = a.steer.confidence ?? 0;
     }
     if (a.sprint){
-      // a noul answers with the probability that the condition holds
       const p = a.sprint.noul ?? 0;
       this.sprintP = p;
       this.sprint = p > 0.65;
