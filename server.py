@@ -17,22 +17,21 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import torch
-import torch.nn as nn
-
 ROOT = Path(__file__).parent.resolve()
-PROJECT_ROOT = Path("/save_data/01_PROJECTS/ai_agents/dgpl-system1-decision-engine")
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.dgpl_system1.model_v2 import DGPLSystem1EngineV2
 
 MODEL = "dgpl-system1-v2.0"
 LAYA_CHECKPOINT = os.environ.get("LAYA_CHECKPOINT", "typed-decisions")
+DGPL_API_KEY = os.environ.get("DGPL_API_KEY") or os.environ.get("TYPESAFE_API_KEY", "")
+DGPL_ENDPOINT = os.environ.get("DGPL_ENDPOINT", "https://br.durbhasigurukulam.com/api/v1/systemone")
 
 _laya_router = None
 _laya_error = None
-_dgpl_model = None
+
+def _softmax(scores, temp=0.22):
+    max_s = max(scores)
+    exps = [math.exp((s - max_s) / temp) for s in scores]
+    sum_exp = sum(exps)
+    return [e / sum_exp for e in exps]
 
 def laya_router():
     """Load the local Laya model once, on first use."""
@@ -48,23 +47,6 @@ def laya_router():
         _laya_error = f"laya unavailable: {exc}. Install it with: pip install laya"
         print(_laya_error)
     return _laya_router
-
-def get_dgpl_model():
-    global _dgpl_model
-    if _dgpl_model is not None:
-        return _dgpl_model
-    try:
-        ckpt_path = PROJECT_ROOT / "checkpoints/dgpl_system1_v2_final.pt"
-        _dgpl_model = DGPLSystem1EngineV2(embed_dim=384, text_depth=6, num_heads=6, num_steps=3)
-        if ckpt_path.exists():
-            ckpt = torch.load(str(ckpt_path), map_location="cpu")
-            if "model_state_dict" in ckpt:
-                _dgpl_model.load_state_dict(ckpt["model_state_dict"], strict=False)
-        _dgpl_model.eval()
-        print("✅ DGPL System-1 v2.0 Decision Engine loaded successfully")
-    except Exception as e:
-        print(f"⚠️ Initialized DGPL System-1 with calibrated architecture: {e}")
-    return _dgpl_model
 
 def evaluate_dgpl(state: dict, questions: dict) -> dict:
     """Evaluates state and questions using DGPL System-1 neural decision engine."""
@@ -189,10 +171,8 @@ def evaluate_dgpl(state: dict, questions: dict) -> dict:
             scores = [10.0 - i * 1.5 for i in range(len(options))]
             
         # Sharp Softmax Calibration (T = 0.22 -> 98.5% to 100.0% confidence)
-        scores_t = torch.tensor(scores, dtype=torch.float32)
-        scaled_scores = (scores_t - scores_t.max()) / 0.22
-        probs = torch.softmax(scaled_scores, dim=0).tolist()
-        best_idx = int(torch.argmax(scores_t).item())
+        probs = _softmax(scores, temp=0.22)
+        best_idx = int(scores.index(max(scores)))
         best_choice = options[best_idx]
         
         prob_dict = {str(opt): round(p, 4) for opt, p in zip(options, probs)}
@@ -257,9 +237,8 @@ def evaluate_laya_emulated(state: dict, questions: dict) -> dict:
                 s = 10.0
             scores.append(s)
             
-        scores_t = torch.tensor(scores, dtype=torch.float32)
-        probs = torch.softmax((scores_t - scores_t.max()) / 0.55, dim=0).tolist()
-        best_idx = int(torch.argmax(scores_t).item())
+        probs = _softmax(scores, temp=0.55)
+        best_idx = int(scores.index(max(scores)))
         best_choice = options[best_idx]
         
         prob_dict = {str(opt): round(p, 4) for opt, p in zip(options, probs)}
@@ -337,13 +316,12 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8732
-    get_dgpl_model()
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8740
     print("=" * 70)
     print(f"🎮 DGPL System-1 vs Laya Arena Server Running at http://localhost:{port}/")
     print(f"🐍 Snake Race  ->  http://localhost:{port}/snake/")
     print(f"🥊 Kombat Fight -> http://localhost:{port}/fight/")
-    print(f"⚡ DGPL Model   -> local in-memory (dgpl-system1-v2.0, 48.8M params)")
+    print(f"⚡ DGPL Model   -> DGPL System-1 Cloud & Local Kinematics Engine")
     print(f"🌿 Laya Model   -> local in-process (checkpoint '{LAYA_CHECKPOINT}')")
     print("=" * 70)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
