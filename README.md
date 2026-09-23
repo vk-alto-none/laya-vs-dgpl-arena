@@ -1,6 +1,14 @@
-# Laya vs Jev — AI vs AI Arena
+# Laya vs DGPL System-1 & Jev — AI vs AI Arena
 
-Two AI models go head to head in a **snake race** and a **Mortal-Kombat-style fight**.
+> [!NOTE]
+> ### 🌟 Original Creator Attribution
+> - **Original Project & Harness**: Originally created by **Prompt Engineer 48** ([GitHub: @PromptEngineer48/laya-vs-jev-arena](https://github.com/PromptEngineer48/laya-vs-jev-arena) · [YouTube: Prompt Engineer 48](https://youtube.com)).
+> - **Models & Systems**:
+>   - **Laya**: Open source System-1 decision model by **Nandha Kishor M** ([GitHub: @NandhaKishorM/laya](https://github.com/NandhaKishorM/laya) · ConvAI Innovations).
+>   - **DGPL System-1 & BRPilot**: High-throughput microsecond decision engine by [Durbhasi Gurukulam Private Limited (DGPL)](https://durbhasigurukulam.com/) ([br.durbhasigurukulam.com](https://br.durbhasigurukulam.com/)).
+>   - **Jev**: System One decision API by **TypeSafe AI** ([typesafe.ai](https://typesafe.ai)).
+
+Three AI models go head to head in a **snake race** and a **Mortal-Kombat-style fight**.
 Every move is a real decision from the model — nothing is scripted.
 
 - **Laya** — open source, Apache 2.0, runs **locally** on your machine · [GitHub](https://github.com/NandhaKishorM/laya) · [Hugging Face](https://huggingface.co/convaiinnovations/laya)

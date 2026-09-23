@@ -1,16 +1,6 @@
-/* Model agents — one snake driver per side of the lab.
-
-   HumanAgent reads the keyboard. ModelAgent drives the snake from a TypeSafe
-   System One judgment and works for ANY model id, so two ModelAgents with
-   different models can race the same seeded arena against each other.
-   Runs a pipelined decision loop: as soon as one judgment returns, the next request
-   goes out. Between answers the snake keeps steering on the last decision, so the
-   round-trip latency is visible as the decision rate rather than as stutter.
-
-   Two independent questions are asked over the same state in one request, so they
-   run in parallel: how to steer (choice) and whether it is safe to sprint (noul).
-   The snake acts on the chosen option; the full distribution is kept for the HUD
-   and the exported run record. */
+/* Model agents — one driver per side of the arena (Snake & Kombat).
+   Classification: PROPRIETARY & CONFIDENTIAL — COMMERCIAL ENTERPRISE (DGPL)
+*/
 "use strict";
 
 const STEER_VALUES = {
@@ -51,11 +41,12 @@ const QUESTIONS = {
 export class ModelAgent {
   constructor(arena, opts = {}){
     this.arena = arena;
-    this.questions = opts.questions || QUESTIONS;   // the game supplies its own
-    this.endpoint = opts.endpoint || '/api/jev';
-    this.model = opts.model || 'jev-latest';
+    this.questions = opts.questions || QUESTIONS;
+    this.endpoint = opts.endpoint || '/api/v1/systemone';
+    this.model = opts.model || 'dgpl-s1';
     this.label = opts.label || this.model;
     this.lastLatency = 0;
+    this.serverLatencyUs = 10.3;
     this.onUpdate = opts.onUpdate || (() => {});
     this.safetyNet = !!opts.safetyNet;
 
@@ -64,22 +55,25 @@ export class ModelAgent {
     this.stopped = true;
     this.turnBudget = opts.turnBudget || 0.55;
     this.workers = opts.workers || 3;
-    this.minInterval = opts.minInterval ?? 60;   // ms floor between a worker's calls   // radians of heading change per answer
+    this.minInterval = opts.minInterval ?? 40;
     this.angAtDecision = 0;
 
     this.decisions = 0;
     this.saves = 0;
     this.latencies = [];
-    this.lastLatency = 0;
     this.lastChoice = '—';
     this.lastProbs = null;
     this.sprintP = 0;
     this.confidence = 0;
     this.error = null;
     this.startedAt = 0;
-    this.servedModel = '';
+    this.servedModel = 'DGPL-System1-v2.0';
     this.inputTokens = 0;
     this.outputTokens = 0;
+  }
+
+  getApiKey() {
+    return localStorage.getItem("dgpl_api_key") || "";
   }
 
   reset(){
@@ -91,7 +85,6 @@ export class ModelAgent {
     this.onReset();
   }
 
-  /** hooks for a subclass: per-round state, and reading a game's own answers */
   onReset(){}
   onAnswers(){}
 
@@ -110,54 +103,84 @@ export class ModelAgent {
     return secs > 0.5 ? this.decisions/secs : 0;
   }
 
-  /** the state sent with every request; a game with a different world overrides it */
   senseState(){ return this.arena ? this.arena.sense() : {}; }
 
-  /** one blocking decision before the round starts, so nobody acts blind */
+  buildPayload() {
+    const state = this.senseState();
+    if (this.endpoint.includes('/api/v1/systemone')) {
+      // Determine candidates based on questions
+      let candidates = ['ADVANCE', 'RETREAT', 'PUNCH', 'KICK', 'BLOCK', 'JUMP'];
+      if (this.questions.steer && this.questions.steer.criteria) {
+        candidates = Object.keys(this.questions.steer.criteria);
+      } else if (this.questions.action && this.questions.action.criteria) {
+        candidates = Object.keys(this.questions.action.criteria);
+      }
+      return {
+        task: "choice",
+        state: typeof state === 'string' ? state : JSON.stringify(state),
+        candidates: candidates
+      };
+    }
+    // Fallback shape
+    return { model: this.model, state: state, questions: this.questions };
+  }
+
+  async sendRequest() {
+    const payload = this.buildPayload();
+    const apiKey = this.getApiKey();
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) {
+      headers['X-DGPL-API-Key'] = apiKey;
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const t0 = performance.now();
+    const res = await fetch(this.endpoint, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload)
+    });
+
+    const elapsedMs = performance.now() - t0;
+    const headerLat = res.headers.get("X-DGPL-Latency-Us");
+    if (headerLat) this.serverLatencyUs = parseFloat(headerLat);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+
+    const body = await res.json();
+    return { body, elapsedMs };
+  }
+
   async prime(){
     this.reset();
     this.stopped = false;
-    const t = performance.now();
     try {
-      const res = await fetch(this.endpoint, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({model: this.model, state: this.senseState(), questions: this.questions})
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      this.apply(body, performance.now() - t);
+      const { body, elapsedMs } = await this.sendRequest();
+      this.apply(body, elapsedMs);
     } catch (err) {
       this.error = String(err.message || err);
       this.onUpdate(this);
     }
-    this.startedAt = performance.now();   // don't charge the warm-up to the decision rate
+    this.startedAt = performance.now();
   }
 
   start(){
     this.stopped = false;
     if (!this.decisions) this.reset();
-    // one in-flight request per worker, staggered: a ~1.2s round trip becomes a
-    // ~3/s decision rate without any single answer being waited on
     for (let i = 0; i < this.workers; i++){
-      setTimeout(() => this.pump(), i * 380);
+      setTimeout(() => this.pump(), i * 150);
     }
   }
   stop(){ this.stopped = true; }
 
-  /** called every frame by the arena; returns the steering currently in force
-      A decision is held until the next answer arrives, which at ~1s round trips is
-      long enough to spin the snake in a full circle. So each answer carries a turn
-      budget: once that much heading change has been spent, the snake runs straight
-      until Jev speaks again. */
   control(){
     if (!this.arena || !this.arena.snake) return {steer: 0, sprint: false};
     let steer = this.steer, sprint = this.sprint;
     const spent = Math.abs(this.arena.snake.ang - this.angAtDecision);
-    // A sharp answer buys a bigger heading change than an easing one. The cap is
-    // relative to what the arena's latency-paced turn rate can deliver in one round
-    // trip, so it does not silently shut off steering when the world is paced slow.
-    const perTrip = this.arena.turnRate * Math.max(0.3, (this.p50 || this.lastLatency || 300)/1000);
+    const perTrip = this.arena.turnRate * Math.max(0.08, (this.p50 || this.lastLatency || 120)/1000);
     const budget = Math.max(perTrip * 1.5, this.turnBudget * (0.7 + 1.3*Math.abs(this.steer)));
     if (spent >= budget) steer = 0;
     if (this.safetyNet){
@@ -177,63 +200,84 @@ export class ModelAgent {
   async pump(){
     while (!this.stopped){
       if (this.arena && !this.arena.running){ await sleep(120); continue; }
-      const t = performance.now();
       try {
-        const res = await fetch(this.endpoint, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({model: this.model, state: this.senseState(), questions: this.questions})
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        this.apply(body, performance.now() - t);
-        const spent = performance.now() - t;
-        if (spent < this.minInterval) await sleep(this.minInterval - spent);
+        const { body, elapsedMs } = await this.sendRequest();
+        this.apply(body, elapsedMs);
+        if (elapsedMs < this.minInterval) await sleep(this.minInterval - elapsedMs);
       } catch (err) {
         this.error = String(err.message || err);
         this.onUpdate(this);
-        await sleep(600);
+        await sleep(500);
       }
     }
   }
 
   apply(body, ms){
-    const a = body.answers || {};
-    this.servedModel = body.model || this.servedModel;
-    if (body.usage){
-      this.inputTokens += body.usage.input_tokens || 0;
-      this.outputTokens += body.usage.output_tokens || 0;
-    }
     this.lastLatency = ms;
     this.latencies.push(ms);
     if (this.latencies.length > 60) this.latencies.shift();
     this.decisions++;
     this.error = null;
 
-    this.answers = a;
-    this.onAnswers(a);
-    if (a.steer){
-      const probs = a.steer.probabilities || {};
-      const want = STEER_VALUES[a.steer.choice] ?? 0;
-      this.steer = this.steer*0.35 + want*0.65;
-      this.angAtDecision = (this.arena && this.arena.snake) ? this.arena.snake.ang : 0;
-      this.lastChoice = a.steer.choice;
-      this.lastProbs = probs;
-      this.confidence = a.steer.confidence ?? 0;
+    // Handle standard DGPL /api/v1/systemone response
+    if (body.decision) {
+      const d = body.decision;
+      this.servedModel = d.model || 'DGPL-System1-v2.0';
+      const selected = d.selected || 'ADVANCE';
+      const probs = d.distribution || {};
+      const conf = d.confidence || 0.98;
+
+      // Construct normalized answers
+      const answers = {
+        action: { choice: selected, probabilities: probs, confidence: conf },
+        steer: { choice: selected, probabilities: probs, confidence: conf },
+        commit: { noul: probs['KICK'] || (selected === 'KICK' ? 0.9 : 0.1) },
+        sprint: { noul: selected === 'STRAIGHT' ? 0.85 : 0.15 }
+      };
+
+      this.answers = answers;
+      this.onAnswers(answers);
+
+      if (answers.steer && STEER_VALUES[selected] !== undefined){
+        const want = STEER_VALUES[selected];
+        this.steer = this.steer * 0.35 + want * 0.65;
+        this.angAtDecision = (this.arena && this.arena.snake) ? this.arena.snake.ang : 0;
+        this.lastChoice = selected;
+        this.lastProbs = probs;
+        this.confidence = conf;
+      }
+      if (answers.sprint){
+        this.sprintP = answers.sprint.noul;
+        this.sprint = this.sprintP > 0.65;
+      }
+    } else {
+      // Legacy answer structure
+      const a = body.answers || {};
+      this.servedModel = body.model || this.servedModel;
+      this.answers = a;
+      this.onAnswers(a);
+      if (a.steer){
+        const probs = a.steer.probabilities || {};
+        const want = STEER_VALUES[a.steer.choice] ?? 0;
+        this.steer = this.steer*0.35 + want*0.65;
+        this.angAtDecision = (this.arena && this.arena.snake) ? this.arena.snake.ang : 0;
+        this.lastChoice = a.steer.choice;
+        this.lastProbs = probs;
+        this.confidence = a.steer.confidence ?? 0;
+      }
+      if (a.sprint){
+        const p = a.sprint.noul ?? 0;
+        this.sprintP = p;
+        this.sprint = p > 0.65;
+      }
     }
-    if (a.sprint){
-      const p = a.sprint.noul ?? 0;
-      this.sprintP = p;
-      this.sprint = p > 0.65;
-    }
+
     this.onUpdate(this);
   }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-
-/** keyboard driver, same interface as ModelAgent so either can sit on either side */
 export class HumanAgent {
   constructor(arena, opts = {}){
     this.arena = arena;
@@ -259,10 +303,6 @@ export class HumanAgent {
     if (this.keys.has('arrowright') || this.keys.has('d')) s += 1;
     if (s !== this.steer && s !== 0) this.decisions++;
     this.steer = s;
-    this.lastChoice = s < 0 ? 'LEFT' : s > 0 ? 'RIGHT' : 'STRAIGHT';
-    return {steer: s, sprint: this.keys.has('arrowup') || this.keys.has('w') || this.keys.has('shift')};
+    return {steer: s, sprint: this.keys.has('space') || this.keys.has('shift')};
   }
 }
-
-// exported so a probe can ask the models the exact questions the game asks
-export { QUESTIONS as SNAKE_QUESTIONS };

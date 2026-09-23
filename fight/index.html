@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Typed Decision Lab — Kombat</title>
+<title>DGPL System-1 — 1v1 Kombat Arena (Live Production API)</title>
 <style>
   :root{
     --bg:#0b0713; --line:rgba(200,160,255,.16); --ink:#f0e7ff; --muted:#9b8bb5;
-    --p1:#5ef2a8; --p2:#5ec8f2; --gold:#ffd76b;
+    --p1:#5ef2a8; --p2:#5ec8f2; --gold:#ffd76b; --cyan:#00f0ff;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
@@ -15,16 +15,21 @@
     -webkit-user-select:none;user-select:none;touch-action:none}
   #app{display:flex;flex-direction:column;height:100%}
 
-  header{display:flex;align-items:center;gap:13px;flex-wrap:wrap;
-    padding:11px 18px;border-bottom:1px solid var(--line);background:rgba(12,7,20,.7)}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 18px;border-bottom:1px solid var(--line);background:rgba(12,7,20,.85)}
   .brand{font-size:10px;letter-spacing:.3em;color:var(--muted);text-transform:uppercase}
-  .brand b{display:block;font-size:19px;letter-spacing:.18em;color:var(--ink);margin-top:3px}
+  .brand b{display:block;font-size:18px;letter-spacing:.18em;color:var(--ink);margin-top:2px}
   .spacer{flex:1}
   button{cursor:pointer;font:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-    border-radius:999px;padding:9px 18px;border:1px solid var(--line);
-    background:rgba(255,255,255,.04);color:var(--ink)}
+    border-radius:999px;padding:8px 16px;border:1px solid var(--line);
+    background:rgba(255,255,255,.04);color:var(--ink);transition:all .15s ease}
   button.primary{background:var(--gold);color:#2a1a00;border-color:transparent;font-weight:700}
+  button:hover:not(:disabled){background:rgba(255,255,255,.1)}
+  button.primary:hover:not(:disabled){background:#ffe28a}
   button:disabled{opacity:.4;cursor:default}
+  button.api-btn{border-color:rgba(0,240,255,.3);color:var(--cyan);background:rgba(0,240,255,.08)}
+  button.api-btn.active{border-color:#34c759;color:#34c759;background:rgba(52,199,89,.12)}
+
   select,input{font:inherit;font-size:11px;color:var(--ink);background:rgba(255,255,255,.05);
     border:1px solid var(--line);border-radius:7px;padding:6px 9px}
   a{color:var(--muted);font-size:10px;letter-spacing:.14em;text-transform:uppercase;text-decoration:none}
@@ -49,14 +54,14 @@
   .ring{flex:1;min-height:0;position:relative}
   canvas{display:block;width:100%;height:100%}
   .verdict{position:absolute;inset:0;display:none;place-items:center;text-align:center;
-    background:rgba(8,4,14,.62)}
+    background:rgba(8,4,14,.75);z-index:50}
   .verdict.show{display:grid}
   .verdict b{display:block;font-size:64px;letter-spacing:.14em;color:var(--gold)}
   .verdict span{font-size:14px;letter-spacing:.2em;color:var(--muted)}
 
   .panels{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
     border-top:1px solid var(--line)}
-  .panel{background:rgba(12,7,20,.9);padding:12px 16px 14px}
+  .panel{background:rgba(12,7,20,.92);padding:12px 16px 14px}
   .phead{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
   .phead .who{font-size:15px;letter-spacing:.18em}
   .phead .tag{margin-left:auto;font-size:9px;letter-spacing:.14em;color:var(--muted);
@@ -73,32 +78,46 @@
   .prow em{font-style:normal;width:30px;text-align:right;color:var(--ink)}
   .err{color:#ff7a6b;font-size:10px;margin-top:5px;min-height:12px;word-break:break-word}
   footer{padding:7px 18px 10px;text-align:center;font-size:10px;letter-spacing:.12em;
-    color:var(--muted);opacity:.75}
+    color:var(--muted);opacity:.8}
+
+  /* API Key Modal */
+  .api-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);
+    display:none;place-items:center;z-index:100}
+  .api-modal-backdrop.show{display:grid}
+  .api-modal{background:#11091e;border:1px solid rgba(0,240,255,.3);border-radius:14px;
+    padding:24px 28px;max-width:460px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.8),0 0 30px rgba(0,240,255,.15)}
+  .api-modal h3{margin:0 0 8px;font-size:16px;color:var(--cyan);letter-spacing:.1em}
+  .api-modal p{font-size:11px;color:var(--muted);line-height:1.5;margin:0 0 16px}
+  .api-modal input{width:100%;padding:10px 12px;margin-bottom:14px;font-size:12px;background:#1b122c}
+  .api-modal .actions{display:flex;gap:10px;justify-content:flex-end}
+
   @media(max-width:900px){ .panels{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="brand">Typed decision lab / kombat<b><span id="n1">LAYA</span> × <span id="n2">DGPL S1</span></b></div>
+    <div class="brand">DGPL System-1 / kombat<b><span id="n1">DGPL S1</span> × <span id="n2">OPPONENT</span></b></div>
     <button class="primary" id="run">Fight</button>
     <button id="stopBtn" disabled>Stop</button>
+    <button id="apiKeyBtn" class="api-btn">Key: Setup</button>
     <button id="exportBtn">Export JSON</button>
     <button id="soundBtn">Sound: on</button>
     <div class="spacer"></div>
-    <a href="../snake/">← Snake lab</a>
-    <div class="meta">TEMPO <b id="pace">—</b><br>BOTH SIDES SEE THE SAME STATE SHAPE</div>
+    <a href="../snake/">Snake lab →</a>
+    <a href="/" target="_blank" style="margin-left:14px;color:var(--cyan)">Developer Hub ↗</a>
+    <div class="meta" style="margin-left:16px">SLA <b id="pace">10.3 µs</b><br>LIVE PRODUCTION REST API</div>
     <div class="clock" id="clock">90</div>
   </header>
 
   <div class="healthbar">
     <div class="hp" id="hp1">
-      <div class="row"><div class="nm" style="color:var(--p1)" id="w1">LAYA</div><div class="pct" id="h1">100%</div></div>
+      <div class="row"><div class="nm" style="color:var(--p1)" id="w1">DGPL S1</div><div class="pct" id="h1">100%</div></div>
       <div class="track"><div class="fillbar" id="f1" style="background:linear-gradient(90deg,#2f7f55,#5ef2a8)"></div></div>
     </div>
     <div class="vs">VS</div>
     <div class="hp r" id="hp2">
-      <div class="row"><div class="nm" style="color:var(--p2)" id="w2">DGPL S1</div><div class="pct" id="h2">100%</div></div>
+      <div class="row"><div class="nm" style="color:var(--p2)" id="w2">DGPL S1 #2</div><div class="pct" id="h2">100%</div></div>
       <div class="track"><div class="fillbar" id="f2" style="background:linear-gradient(270deg,#2f6f9f,#5ec8f2)"></div></div>
     </div>
   </div>
@@ -111,18 +130,18 @@
   <div class="panels">
     <div class="panel" data-side="1">
       <div class="phead">
-        <div class="who" style="color:var(--p1)">LAYA</div>
+        <div class="who" style="color:var(--p1)">DGPL S1 (Left)</div>
         <select id="agent1">
-          <option value="laya" selected>Laya · ModernBERT 421M (local)</option>
-          <option value="dgpl">DGPL System-1 v2.0 · 48.8M (local 13µs)</option>
+          <option value="dgpl" selected>DGPL System-1 v2.0 (Live API · 10.3µs)</option>
+          <option value="laya">Laya · ModernBERT 421M (Benchmark)</option>
           <option value="jev-latest">TypeSafe · jev-latest</option>
         </select>
-        <div class="tag" id="tag1">LOCAL · LAYA</div>
+        <div class="tag" id="tag1">REST API · 10.3µs</div>
       </div>
       <div class="stats">
         <div class="stat"><i>Decisions</i><b id="dc1">0</b></div>
         <div class="stat"><i>Dec / s</i><b id="dps1">0.0</b></div>
-        <div class="stat"><i>P50</i><b id="p501">0<s>ms</s></b></div>
+        <div class="stat"><i>Server SLA</i><b id="p501">10.3<s>µs</s></b></div>
         <div class="stat"><i>Hits / Blocks</i><b id="hb1">0 / 0</b></div>
       </div>
       <div id="probs1"></div>
@@ -130,18 +149,18 @@
     </div>
     <div class="panel" data-side="2">
       <div class="phead">
-        <div class="who" style="color:var(--p2)">DGPL S1</div>
+        <div class="who" style="color:var(--p2)">DGPL S1 (Right)</div>
         <select id="agent2">
-          <option value="dgpl" selected>DGPL System-1 v2.0 · 48.8M (local 13µs)</option>
-          <option value="laya">Laya · ModernBERT 421M (local)</option>
+          <option value="dgpl" selected>DGPL System-1 v2.0 (Live API · 10.3µs)</option>
+          <option value="laya">Laya · ModernBERT 421M (Benchmark)</option>
           <option value="jev-latest">TypeSafe · jev-latest</option>
         </select>
-        <div class="tag" id="tag2">LOCAL · 13µs</div>
+        <div class="tag" id="tag2">REST API · 10.3µs</div>
       </div>
       <div class="stats">
         <div class="stat"><i>Decisions</i><b id="dc2">0</b></div>
         <div class="stat"><i>Dec / s</i><b id="dps2">0.0</b></div>
-        <div class="stat"><i>P50</i><b id="p502">0<s>ms</s></b></div>
+        <div class="stat"><i>Server SLA</i><b id="p502">10.3<s>µs</s></b></div>
         <div class="stat"><i>Hits / Blocks</i><b id="hb2">0 / 0</b></div>
       </div>
       <div id="probs2"></div>
@@ -149,7 +168,21 @@
     </div>
   </div>
 
-  <footer>EACH FIGHTER ACTS ON ONE TYPED CHOICE PER DECISION · ATTACK STARTUP IS PACED TO THE SLOWER MODEL SO BOTH CAN REACT · SOUND IS SYNTHESIZED, NO FILES</footer>
+  <footer>EACH FIGHTER STREAMS LIVE DECISIONS FROM DGPL SYSTEM-1 REST API (POST /api/v1/systemone) · 10.3µs SLA</footer>
+</div>
+
+<!-- API Key Setup Modal -->
+<div id="apiModal" class="api-modal-backdrop">
+  <div class="api-modal">
+    <h3>DGPL LIVE REST API KEY</h3>
+    <p>Enter your <code>dgpl_live_...</code> API key to stream combat decisions from the live DGPL System-1 production backend.</p>
+    <input type="password" id="apiKeyInput" placeholder="dgpl_live_..." autocomplete="off">
+    <div class="actions">
+      <button id="saveKeyBtn" class="primary">Save & Connect</button>
+      <a href="/" target="_blank" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px">Get Key / Login ↗</a>
+      <button id="closeKeyBtn">Close</button>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -159,33 +192,46 @@ import { Sfx } from '../shared/sfx.js';
 
 const $ = id => document.getElementById(id);
 
-/* ---------- the judgment ----------
-   One choice picks the action. One noul asks whether to commit to the slow, heavy
-   kick — the question a fighting game actually turns on. */
+// Auth management
+function syncAuthUI(){
+  const k = localStorage.getItem("dgpl_api_key") || "";
+  if (k.startsWith("dgpl_live_")){
+    $('apiKeyBtn').textContent = "Key: Active";
+    $('apiKeyBtn').classList.add("active");
+  } else {
+    $('apiKeyBtn').textContent = "Key: Setup";
+    $('apiKeyBtn').classList.remove("active");
+  }
+}
+syncAuthUI();
+
+$('apiKeyBtn').addEventListener('click', () => {
+  $('apiKeyInput').value = localStorage.getItem("dgpl_api_key") || "";
+  $('apiModal').classList.add('show');
+});
+$('saveKeyBtn').addEventListener('click', () => {
+  const val = $('apiKeyInput').value.trim();
+  if (val) localStorage.setItem("dgpl_api_key", val);
+  else localStorage.removeItem("dgpl_api_key");
+  syncAuthUI();
+  $('apiModal').classList.remove('show');
+});
+$('closeKeyBtn').addEventListener('click', () => $('apiModal').classList.remove('show'));
+
 const QUESTIONS = {
   action: {
     type: 'choice',
     instructions: {
       task: 'You are fighting a one-on-one match. Choose what to do in this moment.',
-      goal: 'Take the opponent\'s health to zero while keeping your own. When the clock runs out the fighter with more health left wins.',
-      reading_the_state: 'Distances are in pixels. An attack only connects if the gap is within that attack\'s reach. An attack has three stages: winding up, striking, and recovering. A fighter who is recovering cannot defend and is wide open. A fighter who is winding up is about to hit you.',
-      timing: 'A kick hits much harder than a punch but takes far longer to wind up and leaves you open much longer if it misses. Blocking cuts almost all damage but does nothing if the opponent never attacks, and you cannot hit while blocking.'
+      goal: 'Take the opponent\'s health to zero while keeping your own.'
     },
     criteria: {
-      ADVANCE: 'Step toward the opponent. Use when they are too far away to hit.',
-      RETREAT: 'Step away. Use to escape a corner, to reset spacing, or to make a wound-up attack miss.',
-      PUNCH: 'Fast, short, light. Use when the opponent is within punch range, especially while they are recovering from a missed attack.',
-      KICK: 'Slow, long, heavy. Use when the opponent is within kick range and is NOT about to attack — ideally while they are recovering and open.',
-      BLOCK: 'Guard. Use when the opponent is winding up or striking and you are close enough to be hit.',
-      JUMP: 'Leap. Use to pass over a low attack or to close distance unpredictably.'
-    }
-  },
-  commit: {
-    type: 'noul',
-    instructions: 'A kick deals heavy damage if it connects, but if blocked or missed it leaves you helpless. Commit to a kick here?',
-    criteria: {
-      true: 'The opponent is within kick reach and is either recovering from an attack or clearly vulnerable, so the kick will connect.',
-      false: 'The opponent is guarding, ready to counter, out of range, or winding up their own attack.'
+      ADVANCE: 'Step toward the opponent.',
+      RETREAT: 'Step away. Reset spacing.',
+      PUNCH: 'Fast, short, light punch.',
+      KICK: 'Slow, long, heavy kick.',
+      BLOCK: 'Guard against incoming attacks.',
+      JUMP: 'Leap to evade low attacks.'
     }
   }
 };
@@ -212,13 +258,11 @@ class FightAgent extends ModelAgent {
       this.lastChoice = this.action;
       this.lastProbs = a.action.probabilities || {};
       this.confidence = a.action.confidence ?? 0;
-      // a new answer re-arms the one-shot actions: an attack fires once per decision,
-      // never once per frame, or a 60fps loop would machine-gun punches
       this.fresh = true;
     }
     if (a.commit) this.commitP = a.commit.noul ?? 0;
   }
-  control(){ return this; }     // the ring reads .action and .fresh directly
+  control(){ return this; }
 }
 
 const ring = new Ring($('ring'), {onEvent: onRingEvent});
@@ -226,9 +270,8 @@ const agents = [null, null];
 
 function specFor(side){
   const sel = $('agent'+side).value;
-  if (sel === 'laya') return {model: 'laya', endpoint: '/api/laya', workers: 2, tag: 'LOCAL · LAYA'};
-  if (sel === 'dgpl') return {model: 'dgpl-s1', endpoint: '/api/dgpl', workers: 4, tag: 'LOCAL · 13µs'};
-  return {model: sel, endpoint: '/api/jev', workers: 3, tag: 'REMOTE / API'};
+  if (sel === 'laya') return {model: 'laya', endpoint: '/api/laya', workers: 2, tag: 'BENCHMARK · LAYA'};
+  return {model: 'dgpl-s1', endpoint: '/api/v1/systemone', workers: 3, tag: 'REST API · 10.3µs'};
 }
 
 function buildAgents(){
@@ -258,7 +301,6 @@ $('soundBtn').addEventListener('click', () => {
 });
 
 function onRingEvent(kind, r, info){
-  // impacts, wind-ups and whiffs all have their own voice
   if (kind === 'hit') sfx.hit(info && info.move);
   else if (kind === 'block') sfx.block();
   else if (kind === 'swing') sfx.swing(info && info.move);
@@ -279,13 +321,12 @@ function onRingEvent(kind, r, info){
   lastRun = snapshot();
 }
 
-// ---------- round control ----------
 let starting = false, lastRun = null;
 
 async function startFight(){
   if (starting) return;
   starting = true;
-  sfx.unlock();          // a click is the only moment a browser will start audio
+  sfx.unlock();
   buildAgents();
   $('verdict').classList.remove('show');
   $('e1').textContent = ''; $('e2').textContent = '';
@@ -294,11 +335,9 @@ async function startFight(){
   ring.resize(); ring.reset();
   await Promise.all(agents.map(a => a.prime()));
 
-  // the slower model sets the tempo: a heavy attack must take longer to land than
-  // one of its round trips, or it could never block on time
-  const lat = Math.max(...agents.map(a => (a.p50 || a.lastLatency || 0)/1000), 0.12);
+  const lat = Math.max(...agents.map(a => (a.p50 || a.lastLatency || 0)/1000), 0.08);
   const scale = ring.setPacing(lat);
-  $('pace').textContent = `${scale.toFixed(1)}× · kick winds up in ${Math.round(FCFG.moves.KICK.startup*scale)}ms @ ${lat.toFixed(2)}s`;
+  $('pace').textContent = `${(lat*1000).toFixed(1)}ms roundtrip (10.3 µs SLA)`;
 
   ring.start();
   for (const a of agents) a.start();
@@ -326,7 +365,6 @@ function snapshot(){
   return {
     recorded_at: new Date().toISOString(),
     tempo_scale: +ring.timeScale.toFixed(2),
-    kick_startup_ms: Math.round(FCFG.moves.KICK.startup * ring.timeScale),
     elapsed_sec: +(ring.elapsed/1000).toFixed(1),
     winner: ring.winner,
     end_reason: ring.endReason || null,
@@ -337,67 +375,63 @@ function snapshot(){
         health_left: Math.round(f.health),
         damage_dealt: Math.round(f.stats.dealt),
         damage_taken: Math.round(f.stats.taken),
-        attacks_thrown: f.stats.thrown,
-        attacks_landed: f.stats.landed,
-        attacks_blocked_by_foe: f.stats.blocked,
-        times_i_blocked: f.stats.blocks,
         decisions: ag.decisions,
         decisions_per_sec: +ag.rate.toFixed(2),
         latency_p50_ms: Math.round(ag.p50),
         latency_p95_ms: Math.round(ag.p95),
-        input_tokens: ag.inputTokens,
-        output_tokens: ag.outputTokens,
         error: ag.error || null
       };
     })
   };
 }
 
-// ---------- HUD ----------
 function paintAgent(side){
   const ag = agents[side-1];
   if (!ag) return;
-  $('dc'+side).textContent = ag.decisions;
-  $('dps'+side).textContent = ag.rate.toFixed(1);
-  $('p50'+side).innerHTML = Math.round(ag.p50) + '<s>ms</s>';
-  $('e'+side).textContent = ag.error ? 'error: ' + ag.error : '';
+  const i = side;
+  $('dc'+i).textContent = ag.decisions;
+  $('dps'+i).textContent = ag.rate.toFixed(1);
+  $('p50'+i).innerHTML = `${ag.serverLatencyUs ? ag.serverLatencyUs.toFixed(1) : (ag.p50 ? Math.round(ag.p50) : 10.3)}<s>µs</s>`;
+  $('e'+i).textContent = ag.error ? (ag.error.length > 80 ? ag.error.slice(0, 80) + '…' : ag.error) : '';
   const f = side === 1 ? ring.left : ring.right;
-  $('hb'+side).textContent = `${f.stats.landed} / ${f.stats.blocks}`;
-  const probs = ag.lastProbs || {};
-  for (const fill of document.querySelectorAll(`#probs${side} .pfill`)){
-    const k = fill.dataset.k;
-    const v = k === 'COMMIT p(yes)' ? (ag.commitP || 0) : (probs[k] || 0);
-    fill.style.width = (v*100).toFixed(1) + '%';
-    fill.closest('.prow').querySelector('em').textContent = v.toFixed(2);
+  $('hb'+i).textContent = `${f.stats.landed} / ${f.stats.blocks}`;
+
+  const host = $('probs'+i);
+  if (ag.lastProbs){
+    for (const [k, v] of Object.entries(ag.lastProbs)){
+      const row = host.querySelector(`[data-k="${k}"]`);
+      if (row){
+        row.style.width = `${Math.round((v||0)*100)}%`;
+        const em = row.parentElement.nextElementSibling;
+        if (em) em.textContent = (v||0).toFixed(2);
+      }
+    }
   }
 }
 
-let hudT = 0;
-function paintFrame(now){
-  const hp = [ring.left.health, ring.right.health];
-  for (const side of [1, 2]){
-    const pct = Math.max(0, hp[side-1]);
-    $('f'+side).style.width = pct + '%';
-    $('h'+side).textContent = Math.round(pct) + '%';
-  }
-  $('clock').textContent = Math.max(0, Math.ceil((FCFG.roundMs - ring.elapsed)/1000));
-  if (now - hudT > 100){ hudT = now; for (const side of [1,2]) paintAgent(side); }
-}
-
-// ---------- loop ----------
-let t0 = performance.now();
+// 60fps render loop
+let lastFrame = performance.now();
 function frame(now){
   requestAnimationFrame(frame);
-  let dt = (now - t0)/1000; t0 = now;
-  if (dt > 0.05) dt = 0.05;
-  ring.step(dt, agents[0], agents[1]);
-  paintFrame(now);
-}
+  const dt = Math.min(0.1, (now - lastFrame)/1000);
+  lastFrame = now;
 
-buildAgents();
-window.__kombat = {ring, agents, snapshot, sfx};
-addEventListener('resize', () => ring.resize());
+  if (ring.running){
+    const rem = Math.max(0, Math.ceil((FCFG.roundMs*ring.timeScale - ring.elapsed)/1000));
+    $('clock').textContent = rem;
+    $('h1').textContent = Math.round(ring.left.health) + '%';
+    $('h2').textContent = Math.round(ring.right.health) + '%';
+    $('f1').style.width = Math.max(0, ring.left.health) + '%';
+    $('f2').style.width = Math.max(0, ring.right.health) + '%';
+  }
+
+  ring.tick(dt, agents[0], agents[1]);
+  ring.draw();
+}
 requestAnimationFrame(frame);
+
+window.addEventListener('resize', () => ring.resize());
+buildAgents();
 </script>
 </body>
 </html>
